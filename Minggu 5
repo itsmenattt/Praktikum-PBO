@@ -1,0 +1,169 @@
+import tkinter as tk
+from tkinter import messagebox, Menu, Scrollbar, END, Frame
+from datetime import datetime
+import json
+import os
+
+class AplikasiCatatan:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Aplikasi Catatan Harian")
+        self.data_catatan = {}
+        self.judul_aktif = None
+
+        self.buat_menu_baru()
+        self.buat_tampilan()
+        self.ambil_data_catatan()
+
+    def buat_menu_baru(self):
+        menu_utama = Menu(self.master)
+        menu_file = Menu(menu_utama, tearoff=0)
+        menu_file.add_command(label="Keluar", command=self.keluar_dengan_aman)
+        menu_utama.add_cascade(label="File", menu=menu_file)
+
+        menu_bantuan = Menu(menu_utama, tearoff=0)
+        menu_bantuan.add_command(label="Tentang", command=lambda: messagebox.showinfo("Tentang", "Catatan Harian v2.0"))
+        menu_utama.add_cascade(label="Bantuan", menu=menu_bantuan)
+
+        self.master.config(menu=menu_utama)
+
+    def buat_tampilan(self):
+        frame_atas = Frame(self.master, padx=10, pady=10)
+        frame_atas.grid(row=0, column=0, columnspan=2, sticky='we')
+
+        tk.Label(frame_atas, text="Judul:", font=("Arial", 10)).grid(row=0, column=0, sticky='w')
+        self.input_judul = tk.Entry(frame_atas, width=40, font=("Arial", 10))
+        self.input_judul.grid(row=0, column=1, padx=5, sticky='we')
+
+        tk.Button(frame_atas, text="Catatan Baru", command=self.mulai_catatan).grid(row=1, column=0, pady=5)
+        tk.Button(frame_atas, text="Simpan", command=self.simpan_catatan).grid(row=1, column=1, sticky='w')
+        tk.Button(frame_atas, text="Ubah", command=self.ubah_catatan).grid(row=1, column=1, sticky='e', padx=(0, 100))
+        tk.Button(frame_atas, text="Hapus", command=self.hapus_catatan_terpilih).grid(row=1, column=1, sticky='e')
+
+        frame_bawah = Frame(self.master, padx=10, pady=5)
+        frame_bawah.grid(row=1, column=0, columnspan=2, sticky='nsew')
+        self.master.grid_rowconfigure(1, weight=1)
+        self.master.grid_columnconfigure(0, weight=1)
+
+        self.teks_isi = tk.Text(frame_bawah, font=("Arial", 10), wrap='word', state='disabled')
+        self.teks_isi.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        frame_bawah.grid_columnconfigure(0, weight=1)
+        frame_bawah.grid_rowconfigure(0, weight=1)
+
+        self.listbox_catatan = tk.Listbox(frame_bawah, width=40, font=("Arial", 10))
+        self.listbox_catatan.grid(row=0, column=1, sticky='ns')
+        self.listbox_catatan.bind('<<ListboxSelect>>', self.tampilkan_isi_catatan)
+
+        scrollbar = Scrollbar(frame_bawah, command=self.listbox_catatan.yview)
+        scrollbar.grid(row=0, column=2, sticky='ns')
+        self.listbox_catatan.config(yscrollcommand=scrollbar.set)
+
+    def mulai_catatan(self):
+        self.input_judul.delete(0, END)
+        self.teks_isi.config(state='normal')
+        self.teks_isi.delete("1.0", END)
+        self.judul_aktif = None
+
+    def simpan_catatan(self):
+        judul = self.input_judul.get().strip()
+        self.teks_isi.config(state='normal')
+        isi = self.teks_isi.get("1.0", END).strip()
+
+        if not judul or not isi:
+            messagebox.showerror("Error", "Judul dan isi tidak boleh kosong.")
+            return
+
+        if judul in self.data_catatan and self.judul_aktif is None:
+            messagebox.showerror("Error", "Judul sudah digunakan.")
+            return
+
+        waktu_simpan = datetime.now().strftime("%d-%m-%Y %H:%M")
+        self.data_catatan[judul] = {
+            "isi": isi,
+            "waktu": waktu_simpan
+        }
+
+        if self.judul_aktif and self.judul_aktif != judul:
+            del self.data_catatan[self.judul_aktif]
+
+        self.perbarui_daftar()
+        self.input_judul.delete(0, END)
+        self.teks_isi.delete("1.0", END)
+        self.teks_isi.config(state='disabled')
+        self.judul_aktif = None
+
+    def tampilkan_isi_catatan(self, event):
+        pilihan = self.listbox_catatan.curselection()
+        if pilihan:
+            idx = pilihan[0]
+            teks = self.listbox_catatan.get(idx)
+            waktu, judul = teks.split("] ", 1)
+            self.judul_aktif = judul
+            isi = self.data_catatan[judul]["isi"]
+            self.input_judul.delete(0, END)
+            self.input_judul.insert(0, judul)
+            self.teks_isi.config(state='normal')
+            self.teks_isi.delete("1.0", END)
+            self.teks_isi.insert(END, isi)
+            self.teks_isi.config(state='disabled')
+
+    def hapus_catatan_terpilih(self):
+        pilihan = self.listbox_catatan.curselection()
+        if pilihan:
+            idx = pilihan[0]
+            teks = self.listbox_catatan.get(idx)
+            waktu, judul = teks.split("] ", 1)
+            konfirmasi = messagebox.askyesno("Konfirmasi", f"Hapus catatan '{judul}'?")
+            if konfirmasi:
+                self.listbox_catatan.delete(idx)
+                self.data_catatan.pop(judul, None)
+                self.teks_isi.config(state='normal')
+                self.teks_isi.delete("1.0", END)
+                self.teks_isi.config(state='disabled')
+                self.input_judul.delete(0, END)
+                self.judul_aktif = None
+
+    def ubah_catatan(self):
+        if self.judul_aktif:
+            self.teks_isi.config(state='normal')
+        else:
+            messagebox.showinfo("Info", "Pilih catatan yang ingin diubah.")
+
+    def perbarui_daftar(self):
+        self.listbox_catatan.delete(0, END)
+        for judul, data in self.data_catatan.items():
+            label = f"[{data['waktu']}] {judul}"
+            self.listbox_catatan.insert(END, label)
+
+    def ambil_data_catatan(self):
+        if os.path.exists("data_catatan.json"):
+            try:
+                with open("data_catatan.json", "r") as file:
+                    self.data_catatan = json.load(file)
+                self.perbarui_daftar()
+            except Exception as err:
+                messagebox.showerror("Error", f"Gagal memuat data: {err}")
+
+    def simpan_data_ke_file(self):
+        try:
+            with open("data_catatan.json", "w") as file:
+                json.dump(self.data_catatan, file, indent=2)
+        except Exception as err:
+            messagebox.showerror("Error", f"Gagal menyimpan data: {err}")
+
+    def keluar_dengan_aman(self):
+        self.simpan_data_ke_file()
+        self.master.destroy()
+
+
+if __name__ == "__main__":
+    window = tk.Tk()
+    window.geometry("780x450")
+    app = AplikasiCatatan(window)
+
+    def sebelum_tutup():
+        app.simpan_data_ke_file()
+        window.destroy()
+
+    window.protocol("WM_DELETE_WINDOW", sebelum_tutup)
+    window.mainloop()
